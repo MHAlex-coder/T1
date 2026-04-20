@@ -150,7 +150,7 @@ const APP_I18N = {
   },
   en: {
     appTitle: 'Building Block Architecture',
-    appSubtitle: 'Modular product structure',
+    appSubtitle: 'Modular product structuree',
     overviewTab: 'Overview',
     builderTab: 'BB Builder',
     phase: 'Phase 1 — Prototype',

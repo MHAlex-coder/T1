@@ -1310,11 +1310,11 @@ function exportPDF(bbs, modules, metrics, language = 'sv', bbIdConfig) {
 //  JSON SAVE / LOAD
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function exportBBJSON(bb, modules) {
+function exportBBJSON(bb, modules, bbIdConfig) {
   const refIds = new Set((bb.modules || []).map(s => s.moduleId))
   ;(bb.options || []).forEach(o => (o.modules || []).forEach(s => refIds.add(s.moduleId)))
   const usedModules = modules.filter(m => refIds.has(m.id))
-  const data = JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), bb, modules: usedModules }, null, 2)
+  const data = JSON.stringify({ version: 2, exportedAt: new Date().toISOString(), bb, modules: usedModules, bbIdConfig }, null, 2)
   const blob = new Blob([data], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -1328,7 +1328,7 @@ function exportBBJSON(bb, modules) {
 //  SANDBOX MAIN
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export default function Sandbox({ initialModules, initialBBs, onDataChange, onSaveBB, language = 'sv', bbIdConfig }) {
+export default function Sandbox({ initialModules, initialBBs, onDataChange, onSaveBB, language = 'sv', bbIdConfig, onImportBbIdConfig }) {
   const [modules, setModules] = useState(() => initialModules.map(m => ({ ...m, isUserCreated: !!m.isUserCreated })))
   const [bbs, setBBs] = useState(() => {
     const mapped = initialBBs.map(bb => ({ ...bb, modules: bb.modules.map(s => ({ ...s })), options: (bb.options || []).map(opt => ({ ...opt, modules: opt.modules.map(s => ({ ...s })) })) }))
@@ -1640,6 +1640,7 @@ export default function Sandbox({ initialModules, initialBBs, onDataChange, onSa
     reader.onload = ev => {
       try {
         const data = JSON.parse(ev.target.result)
+        if (data.bbIdConfig && onImportBbIdConfig) onImportBbIdConfig(data.bbIdConfig)
         // Support v2 single-BB format
         if (data.version === 2 && data.bb) {
           if (data.modules && Array.isArray(data.modules)) {
@@ -1714,7 +1715,7 @@ export default function Sandbox({ initialModules, initialBBs, onDataChange, onSa
             className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition-colors ${saveFlash ? 'bg-emerald-500 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}>
             <Save className="w-4 h-4" />{saveFlash ? ts(language, 'savedToLibrary') : ts(language, 'saveToLibrary')}
           </button>
-          <button onClick={() => workspaceBB && exportBBJSON(workspaceBB, modules)}
+          <button onClick={() => workspaceBB && exportBBJSON(workspaceBB, modules, bbIdConfig)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
             <FileDown className="w-4 h-4" />{ts(language, 'exportJson')}
           </button>

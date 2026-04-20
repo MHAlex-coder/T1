@@ -264,10 +264,14 @@ const LIBRARY_KEY = 'bb-library'
 function loadLibrary() {
   try {
     const raw = localStorage.getItem(LIBRARY_KEY)
-    if (!raw) return { modules: [], bbs: [] }
+    if (!raw) return { modules: [], bbs: [], bbIdConfig: null }
     const data = JSON.parse(raw)
-    return { modules: Array.isArray(data.modules) ? data.modules : [], bbs: Array.isArray(data.bbs) ? data.bbs : [] }
-  } catch { return { modules: [], bbs: [] } }
+    return {
+      modules: Array.isArray(data.modules) ? data.modules : [],
+      bbs: Array.isArray(data.bbs) ? data.bbs : [],
+      bbIdConfig: data.bbIdConfig || null,
+    }
+  } catch { return { modules: [], bbs: [], bbIdConfig: null } }
 }
 
 function persistLibrary(lib) {
@@ -276,7 +280,7 @@ function persistLibrary(lib) {
   } catch { /* storage full — fail silently */ }
 }
 
-function mergeBBIntoLibrary(library, bb, modules) {
+function mergeBBIntoLibrary(library, bb, modules, bbIdConfig = null) {
   // Merge modules: update existing, add new
   const modMap = new Map(library.modules.map(m => [m.id, m]))
   for (const m of modules) modMap.set(m.id, m)
@@ -288,19 +292,19 @@ function mergeBBIntoLibrary(library, bb, modules) {
   if (bbIdx >= 0) nextBBs[bbIdx] = bb
   else nextBBs.push(bb)
 
-  return { modules: nextModules, bbs: nextBBs }
+  return { modules: nextModules, bbs: nextBBs, bbIdConfig: bbIdConfig || library.bbIdConfig || null }
 }
 
 function importBBFileIntoLibrary(library, fileData) {
   // v2 single-BB format
   if (fileData.version === 2 && fileData.bb) {
-    return mergeBBIntoLibrary(library, fileData.bb, fileData.modules || [])
+    return mergeBBIntoLibrary(library, fileData.bb, fileData.modules || [], fileData.bbIdConfig || null)
   }
   // v1 multi-BB format
   if (fileData.bbs && Array.isArray(fileData.bbs)) {
-    let lib = { ...library }
+    let lib = { ...library, bbIdConfig: fileData.bbIdConfig || library.bbIdConfig || null }
     for (const bb of fileData.bbs) {
-      lib = mergeBBIntoLibrary(lib, bb, fileData.modules || [])
+      lib = mergeBBIntoLibrary(lib, bb, fileData.modules || [], fileData.bbIdConfig || null)
     }
     return lib
   }
@@ -1830,7 +1834,7 @@ export default function App() {
   const [selectedBB, setSelectedBB] = useState(null)
   const [activeTab, setActiveTab] = useState('overview')
   const [language, setLanguage] = useState('en')
-  const [bbIdConfig, setBbIdConfig] = useState(DEFAULT_BB_ID_CONFIG)
+  const [bbIdConfig, setBbIdConfig] = useState(() => loadLibrary().bbIdConfig || DEFAULT_BB_ID_CONFIG)
 
   // ── BB Library (localStorage) — source of truth for Overview ──
   const [bbLibrary, setBbLibrary] = useState(() => loadLibrary())
@@ -1838,7 +1842,17 @@ export default function App() {
 
   function saveBBToLibrary({ bb, modules }) {
     setBbLibrary(prev => {
-      const next = mergeBBIntoLibrary(prev, bb, modules)
+      const bbWithConfig = { ...bb, bbIdConfigSnapshot: bbIdConfig }
+      const next = mergeBBIntoLibrary(prev, bbWithConfig, modules, bbIdConfig)
+      persistLibrary(next)
+      return next
+    })
+  }
+
+  function handleBbIdConfigChange(nextConfig) {
+    setBbIdConfig(nextConfig)
+    setBbLibrary(prev => {
+      const next = { ...prev, bbIdConfig: nextConfig }
       persistLibrary(next)
       return next
     })
@@ -1863,12 +1877,10 @@ export default function App() {
         try { parsed.push(JSON.parse(ev.target.result)) } catch { /* skip */ }
         remaining--
         if (remaining === 0) {
-          setBbLibrary(prev => {
-            let lib = prev
-            for (const data of parsed) lib = importBBFileIntoLibrary(lib, data)
-            persistLibrary(lib)
-            return lib
-          })
+          const merged = parsed.reduce((lib, data) => importBBFileIntoLibrary(lib, data), bbLibrary)
+          setBbLibrary(merged)
+          persistLibrary(merged)
+          if (merged.bbIdConfig) setBbIdConfig(merged.bbIdConfig)
         }
       }
       reader.readAsText(file)
@@ -1894,6 +1906,7 @@ export default function App() {
   function openBBInBuilder(bbId) {
     const bb = bbLibrary.bbs.find(b => b.id === bbId)
     if (!bb) return
+    if (bb.bbIdConfigSnapshot) handleBbIdConfigChange(bb.bbIdConfigSnapshot)
     // Merge library modules with default catalog for the builder
     const modMap = new Map(sandboxDefaultModules.map(m => [m.id, m]))
     for (const m of bbLibrary.modules) modMap.set(m.id, m)
@@ -2051,6 +2064,7 @@ export default function App() {
             initialBBs={sandboxBBs}
             language={language}
             bbIdConfig={bbIdConfig}
+            onImportBbIdConfig={handleBbIdConfigChange}
             onDataChange={({ modules, bbs }) => {
               setSandboxModules(modules)
               setSandboxBBs(bbs)
@@ -2058,7 +2072,7 @@ export default function App() {
             onSaveBB={saveBBToLibrary}
           />
         ) : activeTab === 'bbid' ? (
-          <BBIdTab language={language} config={bbIdConfig} onChange={setBbIdConfig} />
+          <BBIdTab language={language} config={bbIdConfig} onChange={handleBbIdConfigChange} />
         ) : activeTab === 'topology' ? (
           <TopologyView blocks={overviewBlocks} moduleCatalog={overviewModuleCatalog} bbIdConfig={bbIdConfig} language={language} />
         ) : (

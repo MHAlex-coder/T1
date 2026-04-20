@@ -1623,13 +1623,14 @@ function TopologyModuleRow({ slot, mod, language }) {
   )
 }
 
-function TopologyNode({ name, node, depth, moduleCatalog, language, bbIdConfig }) {
+function TopologyNode({ name, node, depth, moduleCatalog, language, bbIdConfig, pathParts = {} }) {
   const [open, setOpen] = useState(depth < 3)
   const childKeys = Object.keys(node.children)
   const hasChildren = childKeys.length > 0 || node.bbs.length > 0
 
   const segDef = bbIdConfig?.segments?.find(s => s.key === node.segKey)
   const segLabel = segDef ? localized(segDef.name, language) : ''
+  const currentParts = node.segKey ? { ...pathParts, [node.segKey]: name } : pathParts
 
   return (
     <div className={depth > 0 ? 'ml-5 border-l-2 border-slate-200' : ''}>
@@ -1655,7 +1656,9 @@ function TopologyNode({ name, node, depth, moduleCatalog, language, bbIdConfig }
           let alias = ''
           if (segDef.aliases?.[name]) alias = localized(segDef.aliases[name].alias, language)
           else if (segDef.dependsOn) {
-            // For dependent segments we'd need parent context — skip at folder level
+            const parentVal = currentParts?.[segDef.dependsOn]
+            const meta = bbIdConfig?.dictionary?.[parentVal]?.[segDef.key]?.[name]
+            if (meta) alias = localized(meta.alias, language)
           }
           return alias ? <span className="text-[10px] text-violet-600 font-medium ml-1">— {alias}</span> : null
         })()}
@@ -1677,6 +1680,7 @@ function TopologyNode({ name, node, depth, moduleCatalog, language, bbIdConfig }
               moduleCatalog={moduleCatalog}
               language={language}
               bbIdConfig={bbIdConfig}
+              pathParts={currentParts}
             />
           ))}
 
@@ -1776,6 +1780,7 @@ function TopologyView({ blocks, moduleCatalog, bbIdConfig, language = 'sv' }) {
                 moduleCatalog={moduleCatalog}
                 language={language}
                 bbIdConfig={bbIdConfig}
+                pathParts={{}}
               />
             ))
           ) : (

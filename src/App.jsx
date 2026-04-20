@@ -280,17 +280,32 @@ function persistLibrary(lib) {
   } catch { /* storage full — fail silently */ }
 }
 
-function mergeBBIntoLibrary(library, bb, modules, bbIdConfig = null) {
+function uniqueImportedBbId(existingBBs, baseId) {
+  const existing = new Set((existingBBs || []).map(b => b.id))
+  if (!existing.has(baseId)) return baseId
+  const seed = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  let candidate = `${baseId}-imp-${seed}`
+  let idx = 1
+  while (existing.has(candidate)) {
+    candidate = `${baseId}-imp-${seed}-${idx}`
+    idx++
+  }
+  return candidate
+}
+
+function mergeBBIntoLibrary(library, bb, modules, bbIdConfig = null, options = {}) {
+  const { forceImportAppend = false } = options
   // Merge modules: update existing, add new
   const modMap = new Map(library.modules.map(m => [m.id, m]))
   for (const m of modules) modMap.set(m.id, m)
   const nextModules = [...modMap.values()]
 
   // Merge BB: update existing, add new
-  const bbIdx = library.bbs.findIndex(b => b.id === bb.id)
+  const incomingBB = forceImportAppend ? { ...bb, id: uniqueImportedBbId(library.bbs, bb.id) } : bb
+  const bbIdx = library.bbs.findIndex(b => b.id === incomingBB.id)
   const nextBBs = [...library.bbs]
-  if (bbIdx >= 0) nextBBs[bbIdx] = bb
-  else nextBBs.push(bb)
+  if (bbIdx >= 0) nextBBs[bbIdx] = incomingBB
+  else nextBBs.push(incomingBB)
 
   return { modules: nextModules, bbs: nextBBs, bbIdConfig: bbIdConfig || library.bbIdConfig || null }
 }
@@ -298,13 +313,13 @@ function mergeBBIntoLibrary(library, bb, modules, bbIdConfig = null) {
 function importBBFileIntoLibrary(library, fileData) {
   // v2 single-BB format
   if (fileData.version === 2 && fileData.bb) {
-    return mergeBBIntoLibrary(library, fileData.bb, fileData.modules || [], fileData.bbIdConfig || null)
+    return mergeBBIntoLibrary(library, fileData.bb, fileData.modules || [], fileData.bbIdConfig || null, { forceImportAppend: true })
   }
   // v1 multi-BB format
   if (fileData.bbs && Array.isArray(fileData.bbs)) {
     let lib = { ...library, bbIdConfig: fileData.bbIdConfig || library.bbIdConfig || null }
     for (const bb of fileData.bbs) {
-      lib = mergeBBIntoLibrary(lib, bb, fileData.modules || [], fileData.bbIdConfig || null)
+      lib = mergeBBIntoLibrary(lib, bb, fileData.modules || [], fileData.bbIdConfig || null, { forceImportAppend: true })
     }
     return lib
   }
